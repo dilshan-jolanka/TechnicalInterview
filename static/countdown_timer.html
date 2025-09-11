@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Countdown Timer</title>
+    <!-- Import React -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <!-- Import Babel for JSX -->
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: transparent;
+        }
+        
+        #timer-root {
+            padding: 10px;
+        }
+        
+        .timer-container {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 10px;
+            background-color: white;
+        }
+        
+        .timer-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 15px;
+            background-color: #f7f7f7;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .timer-display {
+            font-size: 32px;
+            font-weight: bold;
+            transition: color 0.5s;
+        }
+        
+        .timer-progress {
+            height: 6px;
+            background-color: #f0f2f6;
+            width: 100%;
+        }
+        
+        .timer-progress-bar {
+            height: 100%;
+            width: 100%;
+            background-color: #4CAF50;
+            transition: width 1s, background-color 1s;
+        }
+        
+        .timer-label {
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            padding: 8px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div id="timer-root"></div>
+    
+    <script type="text/babel">
+        // Countdown Timer Component
+        const CountdownTimer = () => {
+            // Get time limit from URL parameter
+            const getTimeLimit = () => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const timeLimit = urlParams.get('timeLimit');
+                return timeLimit ? parseInt(timeLimit) : 3600; // Default: 60 minutes
+            };
+            
+            // State for remaining seconds
+            const [remainingSeconds, setRemainingSeconds] = React.useState(getTimeLimit());
+            const [color, setColor] = React.useState('#4CAF50');
+            const totalSeconds = getTimeLimit();
+            
+            // Timer effect - countdown every second
+            React.useEffect(() => {
+                const timer = setInterval(() => {
+                    setRemainingSeconds(prev => {
+                        const newValue = Math.max(0, prev - 1);
+                        
+                        // Change color based on remaining time
+                        if (newValue < 60) { // Less than 1 minute
+                            setColor('#ff0000');
+                        } else if (newValue < 300) { // Less than 5 minutes
+                            setColor('#ff4500');
+                        } else if (newValue < 600) { // Less than 10 minutes
+                            setColor('#ff9800');
+                        } else {
+                            setColor('#4CAF50');
+                        }
+                        
+                        // Notify parent when time expires
+                        if (newValue <= 0 && window.parent) {
+                            window.parent.postMessage('timer_expired', '*');
+                        }
+                        
+                        return newValue;
+                    });
+                }, 1000);
+                
+                return () => clearInterval(timer);
+            }, []);
+            
+            // Format time display
+            const formatTime = (seconds) => {
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            };
+            
+            // Calculate progress percentage
+            const progressPercentage = ((totalSeconds - remainingSeconds) / totalSeconds) * 100;
+            
+            return (
+                <div className="timer-container">
+                    <div className="timer-label">
+                        Time Remaining
+                    </div>
+                    <div className="timer-header">
+                        <div className="timer-display" style={{ color: color }}>
+                            {formatTime(remainingSeconds)}
+                        </div>
+                    </div>
+                    <div className="timer-progress">
+                        <div 
+                            className="timer-progress-bar" 
+                            style={{ 
+                                width: `${Math.max(0, 100 - progressPercentage)}%`,
+                                backgroundColor: color
+                            }}
+                        />
+                    </div>
+                </div>
+            );
+        };
+        
+        // Render the component
+        ReactDOM.render(
+            <CountdownTimer />,
+            document.getElementById('timer-root')
+        );
+    </script>
+</body>
+</html>

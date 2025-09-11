@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Timer Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Timer Example</h1>
+    
+    <div class="container">
+        <h2>Timer Demo</h2>
+        <p>This page demonstrates how to use the timer.html component independently.</p>
+        
+        <div>
+            <label for="minutes">Minutes:</label>
+            <input type="number" id="minutes" min="1" max="60" value="5">
+            <button onclick="startTimer()">Start Timer</button>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <h3>Timer:</h3>
+            <iframe id="timer-frame" src="timer.html" 
+                    style="width: 100%; height: 80px; border: none; overflow: hidden;">
+            </iframe>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>How It Works</h2>
+        <p>
+            The timer is implemented as a standalone HTML component that can be embedded in any page 
+            using an iframe. The timer updates continuously without causing any page refresh.
+        </p>
+        
+        <h3>To use in your own applications:</h3>
+        <ol>
+            <li>Include the iframe pointing to timer.html</li>
+            <li>Send a message to the iframe with start time and time limit</li>
+            <li>Listen for timer_expired messages from the iframe</li>
+        </ol>
+        
+        <pre><code>
+// Send data to timer
+const iframe = document.getElementById('timer-frame');
+iframe.contentWindow.postMessage({
+    type: 'updateTimer',
+    startTime: new Date().toISOString(),
+    timeLimit: 300  // seconds
+}, '*');
+
+// Listen for timer expiry
+window.addEventListener('message', function(event) {
+    if (event.data === 'timer_expired') {
+        alert('Time expired!');
+    }
+});
+        </code></pre>
+    </div>
+    
+    <script>
+        function startTimer() {
+            // Get minutes from input
+            const minutes = parseInt(document.getElementById('minutes').value) || 5;
+            const seconds = minutes * 60;
+            
+            // Get the iframe element
+            const iframe = document.getElementById('timer-frame');
+            
+            // Send timer data to the iframe
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage({
+                    type: 'updateTimer',
+                    startTime: new Date().toISOString(),
+                    timeLimit: seconds
+                }, '*');
+            }
+        }
+        
+        // Listen for timer expiry
+        window.addEventListener('message', function(event) {
+            // Check if the message indicates timer expiry
+            if (event.data === 'timer_expired') {
+                alert('Time expired!');
+            }
+        });
+    </script>
+</body>
+</html>

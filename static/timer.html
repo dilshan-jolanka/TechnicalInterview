@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Timer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: transparent;
+        }
+        
+        .timer-container {
+            text-align: center;
+            padding: 10px;
+        }
+        
+        .timer-display {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 5px 0;
+            transition: color 0.5s;
+        }
+        
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background-color: #f0f2f6;
+            border-radius: 3px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #4CAF50;
+            border-radius: 3px;
+            transition: width 1s, background-color 1s;
+        }
+    </style>
+</head>
+<body>
+    <div class="timer-container">
+        <div id="timer-display" class="timer-display">--:--</div>
+        <div class="progress-container">
+            <div id="progress-bar" class="progress-bar"></div>
+        </div>
+    </div>
+
+    <script>
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            var results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+        
+        // Read timer parameters from URL or localStorage
+        function getTimerData() {
+            // Try to get from URL parameters first
+            let startTimeParam = getUrlParameter('startTime');
+            let timeLimitParam = getUrlParameter('timeLimit');
+            
+            if (startTimeParam && timeLimitParam) {
+                return {
+                    startTime: new Date(startTimeParam),
+                    timeLimit: parseInt(timeLimitParam)
+                };
+            }
+            
+            // If not in URL, try localStorage
+            try {
+                const savedData = localStorage.getItem('timerData');
+                if (savedData) {
+                    return JSON.parse(savedData);
+                }
+            } catch (e) {
+                console.error("Error reading from localStorage:", e);
+            }
+            
+            // Default values if nothing found
+            return {
+                startTime: null,
+                timeLimit: 3600 // Default 60 minutes in seconds
+            };
+        }
+        
+        // Update timer display
+        function updateTimer() {
+            const timerData = getTimerData();
+            
+            if (!timerData.startTime) {
+                document.getElementById('timer-display').innerText = "--:--";
+                document.getElementById('progress-bar').style.width = "0%";
+                
+                // Check again in 1 second
+                setTimeout(updateTimer, 1000);
+                return;
+            }
+            
+            const startTime = new Date(timerData.startTime);
+            const timeLimit = timerData.timeLimit;
+            
+            const currentTime = new Date();
+            const elapsedSeconds = (currentTime - startTime) / 1000;
+            const remainingSeconds = Math.max(0, timeLimit - elapsedSeconds);
+            
+            // Calculate minutes and seconds
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = Math.floor(remainingSeconds % 60);
+            
+            // Format display string
+            const displayText = 
+                (minutes < 10 ? "0" : "") + minutes + ":" + 
+                (seconds < 10 ? "0" : "") + seconds;
+            
+            // Update timer display
+            document.getElementById('timer-display').innerText = displayText;
+            
+            // Calculate and update progress bar
+            const progressPercent = Math.min(100, (elapsedSeconds / timeLimit) * 100);
+            document.getElementById('progress-bar').style.width = progressPercent + "%";
+            
+            // Change colors when time is running out
+            if (remainingSeconds < 60) {
+                document.getElementById('progress-bar').style.backgroundColor = "#ff0000";
+                document.getElementById('timer-display').style.color = "#ff0000";
+            } else if (remainingSeconds < 300) { // 5 minutes
+                document.getElementById('progress-bar').style.backgroundColor = "#ff4500";
+                document.getElementById('timer-display').style.color = "#ff4500";
+            } else if (remainingSeconds < 600) { // 10 minutes
+                document.getElementById('progress-bar').style.backgroundColor = "#ff9800";
+                document.getElementById('timer-display').style.color = "#ff9800";
+            }
+            
+            // Check if time expired
+            if (remainingSeconds <= 0) {
+                // Notify parent window
+                if (window.parent) {
+                    window.parent.postMessage('timer_expired', '*');
+                }
+                
+                // Wait 2 seconds before checking again
+                setTimeout(updateTimer, 2000);
+            } else {
+                // Continue updating every second
+                setTimeout(updateTimer, 1000);
+            }
+        }
+        
+        // Start the timer
+        updateTimer();
+        
+        // Listen for messages from parent window
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'updateTimer') {
+                // Save timer data to localStorage
+                localStorage.setItem('timerData', JSON.stringify({
+                    startTime: event.data.startTime,
+                    timeLimit: event.data.timeLimit
+                }));
+                
+                // Force timer update
+                updateTimer();
+            }
+        });
+    </script>
+</body>
+</html>

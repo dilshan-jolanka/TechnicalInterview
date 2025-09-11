@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>React Timer with Code Display</title>
+    <!-- Import React -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <!-- Import Babel for JSX -->
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <!-- Import Prism for code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-okaidia.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-csharp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-markup.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: transparent;
+        }
+        
+        #timer-root {
+            padding: 10px;
+        }
+        
+        .timer-container {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 10px;
+            background-color: white;
+        }
+        
+        .timer-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: #f7f7f7;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .timer-display {
+            font-size: 22px;
+            font-weight: bold;
+            transition: color 0.5s;
+        }
+        
+        .timer-progress {
+            height: 4px;
+            background-color: #f0f2f6;
+            width: 100%;
+        }
+        
+        .timer-progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #4CAF50;
+            transition: width 1s, background-color 1s;
+        }
+        
+        .code-container {
+            max-height: 250px;
+            overflow-y: auto;
+            background-color: #282c34;
+            border-top: 1px solid #eee;
+            transition: max-height 0.3s ease;
+            padding: 10px;
+            border-radius: 0 0 8px 8px;
+        }
+        
+        .code-container.collapsed {
+            max-height: 0px;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        pre {
+            margin: 0;
+            font-size: 14px;
+            background: transparent !important;
+        }
+        
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+            tab-size: 2;
+            background: transparent !important;
+            padding: 0 !important;
+            line-height: 1.5 !important;
+            color: #f8f8f2 !important;
+        }
+        
+        .toggle-button {
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #555;
+            padding: 0;
+        }
+        
+        .tabs {
+            display: flex;
+            background-color: #f0f2f6;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .tab {
+            padding: 8px 15px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .tab.active {
+            border-bottom-color: #4CAF50;
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="timer-root"></div>
+    
+    <script type="text/babel">
+        // React Timer Component with Code Display
+        const CodeTimer = ({ initialCode = '', language = 'python' }) => {
+            // State hooks - simplified to focus on code display
+            const [code, setCode] = React.useState(initialCode);
+            const [currentLanguage, setLanguage] = React.useState(language);
+            
+            // Timer data - kept for compatibility but not displayed
+            const [timerData, setTimerData] = React.useState({
+                startTime: null,
+                timeLimit: 3600 // Default: 60 minutes in seconds
+            });
+            
+            // Timer data
+            const [timerData, setTimerData] = React.useState({
+                startTime: null,
+                timeLimit: 3600 // Default: 60 minutes in seconds
+            });
+            
+            // Highlight code when it changes
+            React.useEffect(() => {
+                setTimeout(() => {
+                    if (window.Prism) {
+                        window.Prism.highlightAll();
+                    }
+                }, 100); // Small delay to ensure DOM is updated
+            }, [code, showCode, activeTab, currentLanguage]);
+            
+            // Timer effect
+            React.useEffect(() => {
+                // Timer update function
+                const updateTimer = () => {
+                    if (!timerData.startTime) {
+                        return;
+                    }
+                    
+                    const startTime = new Date(timerData.startTime);
+                    const currentTime = new Date();
+                    const elapsedSeconds = (currentTime - startTime) / 1000;
+                    const remainingSeconds = Math.max(0, timerData.timeLimit - elapsedSeconds);
+                    
+                    // Calculate minutes and seconds
+                    const minutes = Math.floor(remainingSeconds / 60);
+                    const seconds = Math.floor(remainingSeconds % 60);
+                    
+                    // Format display string
+                    const displayText = 
+                        (minutes < 10 ? "0" : "") + minutes + ":" + 
+                        (seconds < 10 ? "0" : "") + seconds;
+                    
+                    // Update states
+                    setTimeDisplay(displayText);
+                    setProgress((elapsedSeconds / timerData.timeLimit) * 100);
+                    
+                    // Change color when time is running out
+                    if (remainingSeconds < 60) { // Less than 1 minute
+                        setColor('#ff0000');
+                    } else if (remainingSeconds < 300) { // Less than 5 minutes
+                        setColor('#ff4500');
+                    } else if (remainingSeconds < 600) { // Less than 10 minutes
+                        setColor('#ff9800');
+                    }
+                    
+                    // Check if time expired
+                    if (remainingSeconds <= 0) {
+                        // Notify parent window
+                        if (window.parent) {
+                            window.parent.postMessage('timer_expired', '*');
+                        }
+                    }
+                };
+                
+                // Set up timer interval
+                updateTimer();
+                const timerId = setInterval(updateTimer, 1000);
+                
+                // Clean up interval
+                return () => clearInterval(timerId);
+            }, [timerData]);
+            
+            // Listen for messages from parent
+            React.useEffect(() => {
+                const handleMessage = (event) => {
+                    if (event.data && event.data.type === 'updateTimer') {
+                        setTimerData({
+                            startTime: event.data.startTime,
+                            timeLimit: event.data.timeLimit
+                        });
+                    }
+                    if (event.data && event.data.type === 'updateCode') {
+                        setCode(event.data.code || '');
+                        if (event.data.language) {
+                            setLanguage(event.data.language);
+                        }
+                    }
+                };
+                
+                window.addEventListener('message', handleMessage);
+                return () => window.removeEventListener('message', handleMessage);
+            }, []);
+            
+            // Toggle code display
+            const toggleCode = () => {
+                setShowCode(!showCode);
+            };
+            
+            return (
+                <div className="timer-container">
+                    {/* Tabs */}
+                    <div className="tabs">
+                        <div 
+                            className={`tab ${activeTab === 'timer' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('timer')}
+                        >
+                            Timer
+                        </div>
+                        <div 
+                            className={`tab ${activeTab === 'code' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('code')}
+                        >
+                            Code
+                        </div>
+                    </div>
+                    
+                    {/* Timer Tab */}
+                    {activeTab === 'timer' && (
+                        <>
+                            <div className="timer-header">
+                                <div className="timer-display" style={{ color: color }}>
+                                    {timeDisplay}
+                                </div>
+                                <button className="toggle-button" onClick={toggleCode}>
+                                    {showCode ? '▲' : '▼'}
+                                </button>
+                            </div>
+                            <div className="timer-progress">
+                                <div 
+                                    className="timer-progress-bar" 
+                                    style={{ 
+                                        width: `${progress}%`,
+                                        backgroundColor: color
+                                    }}
+                                />
+                            </div>
+                            <div className={`code-container ${!showCode ? 'collapsed' : ''}`}>
+                                <div style={{ color: '#f8f8f2', marginBottom: '5px', fontSize: '12px' }}>
+                                    <strong>Code Snippet ({currentLanguage}):</strong>
+                                </div>
+                                <pre><code className={`language-${currentLanguage}`}>{code}</code></pre>
+                            </div>
+                        </>
+                    )}
+                    
+                    {/* Code Tab */}
+                    {activeTab === 'code' && (
+                        <div className="code-container" style={{ maxHeight: '300px' }}>
+                            <div style={{ color: '#f8f8f2', marginBottom: '5px', fontSize: '12px' }}>
+                                <strong>Code Snippet ({currentLanguage}):</strong>
+                            </div>
+                            <pre><code className={`language-${currentLanguage}`}>{code}</code></pre>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        
+        // Render the component
+        ReactDOM.render(
+            <CodeTimer language={getUrlParameter('language') || 'python'} />,
+            document.getElementById('timer-root')
+        );
+        
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            var results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+        
+        // Initialize with URL params if available
+        window.addEventListener('load', () => {
+            const startTimeParam = getUrlParameter('startTime');
+            const timeLimitParam = getUrlParameter('timeLimit');
+            const codeParam = getUrlParameter('code');
+            const languageParam = getUrlParameter('language') || 'python';
+            
+            if (startTimeParam && timeLimitParam) {
+                window.dispatchEvent(new MessageEvent('message', {
+                    data: {
+                        type: 'updateTimer',
+                        startTime: startTimeParam,
+                        timeLimit: parseInt(timeLimitParam)
+                    }
+                }));
+            }
+            
+            if (codeParam) {
+                try {
+                    const decodedCode = atob(codeParam);
+                    window.dispatchEvent(new MessageEvent('message', {
+                        data: {
+                            type: 'updateCode',
+                            code: decodedCode
+                        }
+                    }));
+                } catch (e) {
+                    console.error('Error decoding code:', e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

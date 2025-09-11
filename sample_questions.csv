@@ -1,0 +1,39 @@
+category,question_text,code_snippet,option_a,option_b,option_c,option_d,correct_option
+C#,What is C# primarily used for?,,Web development,Game development,Desktop applications,All of the above,D
+C#,Which company developed C#?,,Microsoft,Apple,Google,Oracle,A
+C#,Which of the following is not a C# data type in this code snippet?,```csharp
+using System;
+
+class Program
+{
+    static void Main()
+    {
+        int number = 10;
+        float price = 9.99f;
+        string name = "Test";
+        // What's missing?
+    }
+}
+```,int,float,string,card,D
+C#,What symbol is used to denote an interface in C#?,,I,@,#,$,A
+C#,What does the 'var' keyword do in C#?,,Declares a variable with inferred type,Declares a constant,Creates a variant type,Makes a variable volatile,A
+ASP.NET,What does ASP.NET stand for?,,Active Server Pages .NET,Application Service Provider .NET,Advanced Server Pages .NET,Automated System Protocol .NET,A
+ASP.NET,Which of the following is not an ASP.NET Core middleware?,,Authentication,Session,WebForms,Routing,C
+ASP.NET,Which of the following is not a valid HTTP verb in ASP.NET MVC?,,GET,POST,PATCH,SEND,D
+ASP.NET,What is the default template engine in ASP.NET Core?,,Razor,Handlebars,Pug,Mustache,A
+ASP.NET,Which class serves as the base class for web forms in ASP.NET?,Page,Control,Form,Base,A
+MS SQL,What is the SQL command to retrieve data from a database?,SELECT,FETCH,EXTRACT,GET,A
+MS SQL,Which SQL constraint enforces uniqueness?,UNIQUE,DISTINCT,EXCLUSIVE,SOLO,A
+MS SQL,What is a stored procedure in SQL?,Precompiled SQL statements,Database backups,Security protocols,Error logs,A
+MS SQL,What does INNER JOIN return?,Matching records from both tables,All records from the left table,All records from both tables,No records,A
+MS SQL,Which function returns the current date and time in SQL Server?,GETDATE(),CURRENTDATE(),SYSDATE(),NOW(),A
+JavaScript,What symbol is used to access an HTML element by its ID in JavaScript?,getElementById,#,querySelector,$,A
+JavaScript,Which method adds a new element at the end of an array in JavaScript?,push(),add(),append(),insert(),A
+JavaScript,What is the correct way to declare a JavaScript variable?,var x = 5,x = 5,variable x = 5,declare x = 5,A
+JavaScript,Which operator is used for strict equality in JavaScript?,===,==,=,equals(),A
+JavaScript,What is the output of console.log(typeof [])?,object,array,list,collection,A
+HTML/CSS,What does HTML stand for?,Hypertext Markup Language,High-Tech Modern Language,Hypertext Management Language,Hybrid Technical Markup Language,A
+HTML/CSS,Which HTML tag is used to define an internal style sheet?,<style>,<css>,<script>,<stylesheet>,A
+HTML/CSS,Which CSS property changes the text color?,color,text-color,font-color,foreground,A
+HTML/CSS,What is the correct HTML for creating a hyperlink?,<a href="http://example.com">Link</a>,<link href="http://example.com">Link</link>,<hyperlink="http://example.com">Link</hyperlink>,<url="http://example.com">Link</url>,A
+HTML/CSS,Which CSS property is used to change the background color?,background-color,bg-color,color-background,fill,A
