@@ -931,6 +931,330 @@ def generate_psychological_profile_pdf(candidate_id, candidate_name, candidate_e
     
     return pdf_data
 
+def generate_complete_candidate_report_pdf(candidate_id, candidate_name, candidate_email):
+    """Generate comprehensive PDF report with candidate marks and AI analysis"""
+    
+    # Get candidate data
+    conn = sqlite3.connect('data/mcq_interview.db')
+    cursor = conn.cursor()
+    
+    # Get candidate basic info
+    cursor.execute("SELECT date_taken FROM candidates WHERE id = ?", (candidate_id,))
+    candidate_result = cursor.fetchone()
+    if not candidate_result:
+        conn.close()
+        return None
+    
+    date_taken = candidate_result[0]
+    
+    # Get candidate results summary
+    cursor.execute("""
+        SELECT category, score, total_questions 
+        FROM results WHERE candidate_id = ?
+    """, (candidate_id,))
+    results_summary = cursor.fetchall()
+    
+    # Get detailed answers
+    cursor.execute("""
+        SELECT q.id, q.category, q.question, q.code_snippet, q.option_a, q.option_b, q.option_c, q.option_d, 
+               q.correct, a.selected_option, a.is_correct
+        FROM answers a
+        JOIN questions q ON a.question_id = q.id
+        WHERE a.candidate_id = ?
+        ORDER BY q.category, q.id
+    """, (candidate_id,))
+    detailed_answers = cursor.fetchall()
+    
+    conn.close()
+    
+    if not detailed_answers:
+        return None
+    
+    # Calculate overall scores
+    total_score = sum(row[1] for row in results_summary)
+    total_questions = sum(row[2] for row in results_summary)
+    overall_percentage = (total_score / total_questions * 100) if total_questions > 0 else 0
+    
+    # Prepare data for AI analysis
+    questions = []
+    candidate_answers = {}
+    
+    for result in detailed_answers:
+        question = {
+            'id': result[0],
+            'category': result[1],
+            'question': result[2],
+            'code_snippet': result[3] or '',
+            'correct': result[8]
+        }
+        questions.append(question)
+        candidate_answers[result[0]] = result[9]
+    
+    # Perform AI analysis
+    try:
+        cognitive_traits, category_analysis, response_patterns = analyze_cognitive_patterns(
+            candidate_id, candidate_answers, questions
+        )
+        
+        personality_insights = generate_personality_insights(cognitive_traits, category_analysis)
+        recommendations = generate_candidate_recommendations(
+            cognitive_traits, personality_insights, category_analysis
+        )
+    except Exception as e:
+        # If AI analysis fails, create basic placeholders
+        cognitive_traits = {'analytical_thinking': 'N/A', 'problem_solving': 'N/A'}
+        personality_insights = {'work_style': 'Analysis unavailable'}
+        recommendations = {
+            'suitable_roles': ['Technical Assessment Incomplete'],
+            'strengths': ['Data insufficient for analysis'],
+            'development_areas': ['Complete assessment for detailed analysis'],
+            'team_fit': 'Requires full assessment',
+            'training_recommendations': ['Complete technical assessment']
+        }
+    
+    # Generate PDF
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    
+    # Get styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=26,
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        textColor=colors.darkblue
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=18,
+        spaceAfter=15,
+        textColor=colors.darkblue,
+        borderWidth=2,
+        borderColor=colors.darkblue,
+        borderPadding=8
+    )
+    
+    subheading_style = ParagraphStyle(
+        'CustomSubHeading',
+        parent=styles['Heading3'],
+        fontSize=14,
+        spaceAfter=10,
+        textColor=colors.darkgreen
+    )
+    
+    # Build PDF content
+    story = []
+    
+    # Header with company branding
+    story.append(Paragraph("JOLANKA GROUP", ParagraphStyle('Company', fontSize=20, textColor=colors.darkblue, alignment=TA_CENTER)))
+    story.append(Paragraph("Technical Interview Assessment Report", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Candidate Information Section
+    story.append(Paragraph("CANDIDATE INFORMATION", heading_style))
+    candidate_info = [
+        ['Full Name:', candidate_name],
+        ['Email Address:', candidate_email],
+        ['Assessment Date:', pd.to_datetime(date_taken).strftime('%Y-%m-%d %H:%M')],
+        ['Report Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')],
+        ['Total Questions:', str(total_questions)],
+        ['Overall Score:', f"{total_score}/{total_questions} ({overall_percentage:.1f}%)"]
+    ]
+    
+    info_table = Table(candidate_info, colWidths=[2.2*inch, 3.8*inch])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('BACKGROUND', (0, 0), (0, -1), colors.darkblue),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    story.append(info_table)
+    story.append(Spacer(1, 25))
+    
+    # Performance Summary by Category
+    story.append(Paragraph("PERFORMANCE SUMMARY BY CATEGORY", heading_style))
+    
+    category_data = [['Category', 'Score', 'Total Questions', 'Percentage', 'Performance Level']]
+    for category, score, total in results_summary:
+        percentage = (score / total * 100) if total > 0 else 0
+        if percentage >= 85:
+            level = "Excellent"
+        elif percentage >= 70:
+            level = "Good"
+        elif percentage >= 50:
+            level = "Average"
+        else:
+            level = "Needs Improvement"
+        
+        category_data.append([
+            category,
+            str(score),
+            str(total), 
+            f"{percentage:.1f}%",
+            level
+        ])
+    
+    category_table = Table(category_data, colWidths=[1.8*inch, 0.8*inch, 1*inch, 1*inch, 1.4*inch])
+    category_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+    ]))
+    
+    story.append(category_table)
+    story.append(Spacer(1, 25))
+    
+    # Page break before detailed answers
+    story.append(PageBreak())
+    
+    # Detailed Question-by-Question Results
+    story.append(Paragraph("DETAILED QUESTION ANALYSIS", heading_style))
+    
+    current_category = ""
+    question_number = 1
+    
+    for result in detailed_answers:
+        question_id, category, question, code_snippet, opt_a, opt_b, opt_c, opt_d, correct, selected, is_correct = result
+        
+        # Category header
+        if category != current_category:
+            current_category = category
+            story.append(Paragraph(f"{category.upper()}", subheading_style))
+        
+        # Question details
+        status = "✓ CORRECT" if is_correct else "✗ INCORRECT"
+        status_color = colors.green if is_correct else colors.red
+        
+        question_text = f"<b>Q{question_number}:</b> {question}"
+        story.append(Paragraph(question_text, styles['Normal']))
+        
+        if code_snippet:
+            code_style = ParagraphStyle('Code', fontSize=9, fontName='Courier', 
+                                      backgroundColor=colors.lightgrey, borderPadding=5)
+            story.append(Paragraph(f"<pre>{code_snippet}</pre>", code_style))
+        
+        # Options
+        options = [f"A) {opt_a}", f"B) {opt_b}", f"C) {opt_c}", f"D) {opt_d}"]
+        for option in options:
+            story.append(Paragraph(option, styles['Normal']))
+        
+        # Answer information
+        answer_info = [
+            ['Correct Answer:', correct],
+            ['Selected Answer:', selected or 'Not Answered'],
+            ['Result:', status]
+        ]
+        
+        answer_table = Table(answer_info, colWidths=[1.5*inch, 1.5*inch])
+        answer_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TEXTCOLOR', (0, 2), (1, 2), status_color),
+            ('FONTNAME', (1, 2), (1, 2), 'Helvetica-Bold'),
+        ]))
+        
+        story.append(answer_table)
+        story.append(Spacer(1, 15))
+        
+        question_number += 1
+        
+        # Add page break after every 5 questions to prevent overcrowding
+        if question_number % 5 == 1 and question_number > 1:
+            story.append(PageBreak())
+    
+    # Page break before AI analysis
+    story.append(PageBreak())
+    
+    # AI Analysis Section
+    story.append(Paragraph("AI-POWERED PSYCHOLOGICAL ANALYSIS", heading_style))
+    
+    # Cognitive Abilities
+    story.append(Paragraph("Cognitive Assessment", subheading_style))
+    if isinstance(cognitive_traits, dict):
+        cognitive_data = []
+        for trait, score in cognitive_traits.items():
+            if isinstance(score, (int, float)):
+                trait_name = trait.replace('_', ' ').title()
+                score_text = f"{score:.1f}%"
+                level = "Excellent" if score > 85 else "Good" if score > 70 else "Average" if score > 50 else "Needs Improvement"
+                cognitive_data.append([trait_name, score_text, level])
+        
+        if cognitive_data:
+            cognitive_table = Table(cognitive_data, colWidths=[2.5*inch, 1*inch, 1.5*inch])
+            cognitive_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.purple),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(cognitive_table)
+    
+    story.append(Spacer(1, 20))
+    
+    # Professional Recommendations
+    story.append(Paragraph("Professional Recommendations", subheading_style))
+    
+    if isinstance(recommendations, dict):
+        # Suitable Roles
+        story.append(Paragraph("<b>Recommended Roles:</b>", styles['Normal']))
+        for role in recommendations.get('suitable_roles', []):
+            story.append(Paragraph(f"• {role}", styles['Normal']))
+        story.append(Spacer(1, 10))
+        
+        # Key Strengths
+        story.append(Paragraph("<b>Key Strengths:</b>", styles['Normal']))
+        for strength in recommendations.get('strengths', []):
+            story.append(Paragraph(f"• {strength}", styles['Normal']))
+        story.append(Spacer(1, 10))
+        
+        # Development Areas
+        story.append(Paragraph("<b>Development Areas:</b>", styles['Normal']))
+        for area in recommendations.get('development_areas', []):
+            story.append(Paragraph(f"• {area}", styles['Normal']))
+        story.append(Spacer(1, 10))
+        
+        # Team Fit
+        team_fit = recommendations.get('team_fit', 'Assessment incomplete')
+        story.append(Paragraph(f"<b>Team Fit:</b> {team_fit}", styles['Normal']))
+    
+    story.append(Spacer(1, 30))
+    
+    # Footer
+    story.append(Paragraph("REPORT DISCLAIMER", subheading_style))
+    story.append(Paragraph("This comprehensive report combines quantitative assessment results with AI-powered psychological analysis. The technical scores reflect the candidate's performance on domain-specific questions, while the AI analysis provides insights based on response patterns and cognitive indicators. Both components should be considered together for a complete evaluation.", styles['Normal']))
+    
+    story.append(Spacer(1, 15))
+    story.append(Paragraph(f"<b>Report Generated by:</b> Jolanka Group Technical Assessment System<br/><b>Generation Date:</b> {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_data
+
 # Function to get random questions from each category
 def get_random_questions():
     conn = sqlite3.connect('data/mcq_interview.db')
@@ -2327,7 +2651,7 @@ def show_candidate_details(candidate_id, conn):
     st.markdown(f"**Date taken:** {pd.to_datetime(candidate['date_taken']).strftime('%Y-%m-%d %H:%M')}")
     
     # Action buttons row
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
     
     with col2:
         if st.button("📊 Generate AI Report", key=f"ai_report_{candidate_id}", type="primary", help="Generate comprehensive psychological analysis"):
@@ -2351,6 +2675,27 @@ def show_candidate_details(candidate_id, conn):
                     st.error(f"Error generating AI report: {str(e)}")
     
     with col3:
+        if st.button("🖨️ Print Complete Report", key=f"print_report_{candidate_id}", type="primary", help="Generate complete PDF with marks and AI analysis"):
+            with st.spinner("Generating complete PDF report with marks and AI analysis..."):
+                try:
+                    pdf_data = generate_complete_candidate_report_pdf(candidate_id, candidate['name'], candidate['email'])
+                    if pdf_data:
+                        # Create download link
+                        b64_pdf = base64.b64encode(pdf_data).decode()
+                        pdf_filename = f"Complete_Report_{candidate['name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                        
+                        href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{pdf_filename}" style="text-decoration: none;">'
+                        href += '<div style="background: #2196F3; color: white; padding: 10px 20px; border-radius: 5px; text-align: center; margin: 10px 0;">'
+                        href += '🖨️ Download Complete Report PDF</div></a>'
+                        
+                        st.markdown(href, unsafe_allow_html=True)
+                        st.success("Complete report with marks and AI analysis generated successfully!")
+                    else:
+                        st.error("No data available for analysis. Please ensure the candidate has completed the interview.")
+                except Exception as e:
+                    st.error(f"Error generating complete report: {str(e)}")
+    
+    with col4:
         if st.button("📄 Quick Summary", key=f"summary_{candidate_id}", type="secondary", help="View quick performance summary"):
             st.session_state[f'show_summary_{candidate_id}'] = not st.session_state.get(f'show_summary_{candidate_id}', False)
     
@@ -2926,9 +3271,22 @@ def questions_management():
 def view_questions():
     st.subheader("View Questions")
     
+    # Handle deletion first if there's a deletion in progress
+    if 'delete_question_id' in st.session_state:
+        question_id = st.session_state['delete_question_id']
+        conn = sqlite3.connect('data/mcq_interview.db')
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+        conn.commit()
+        conn.close()
+        st.success(f"Question {question_id} deleted successfully!")
+        del st.session_state['delete_question_id']
+        time.sleep(1)
+        st.rerun()
+    
     conn = sqlite3.connect('data/mcq_interview.db')
     
-    # Get categories for filtering
+    # Get categories for filtering (get fresh data each time)
     categories = pd.read_sql_query(
         "SELECT DISTINCT category FROM questions ORDER BY category", 
         conn
@@ -2959,7 +3317,7 @@ def view_questions():
     
     query += " ORDER BY category, id"
     
-    # Get the questions
+    # Get the questions (this will always get fresh data from the database)
     questions = pd.read_sql_query(query, conn, params=params)
     conn.close()
     
@@ -2974,12 +3332,17 @@ def view_questions():
         if 'question_page' not in st.session_state:
             st.session_state['question_page'] = 0
         
+        # Ensure page doesn't exceed available pages after deletion
+        if st.session_state['question_page'] >= num_pages:
+            st.session_state['question_page'] = max(0, num_pages - 1)
+        
         # Page navigation
         col1, col2, col3 = st.columns([1, 3, 1])
         
         with col1:
             if st.button("Previous", disabled=(st.session_state['question_page'] <= 0)):
                 st.session_state['question_page'] -= 1
+                st.rerun()
         
         with col2:
             st.write(f"Page {st.session_state['question_page'] + 1} of {num_pages}")
@@ -2987,6 +3350,7 @@ def view_questions():
         with col3:
             if st.button("Next", disabled=(st.session_state['question_page'] >= num_pages - 1)):
                 st.session_state['question_page'] += 1
+                st.rerun()
         
         # Get questions for current page
         start_idx = st.session_state['question_page'] * questions_per_page
@@ -3014,16 +3378,14 @@ def view_questions():
                 st.markdown(f"D. {q['option_d']}")
                 st.markdown(f"**Correct Answer:** {q['correct']}")
                 
-                # Delete button
-                if st.button("Delete Question", key=f"delete_{q['id']}"):
-                    conn = sqlite3.connect('data/mcq_interview.db')
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM questions WHERE id = ?", (q['id'],))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"Question {q['id']} deleted successfully!")
-                    time.sleep(1)  # Brief pause to show the success message
-                    st.rerun()
+                # Delete button with proper state management
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if st.button("🗑️ Delete", key=f"delete_{q['id']}", help="Delete this question", type="secondary"):
+                        st.session_state['delete_question_id'] = q['id']
+                        st.rerun()
+                with col2:
+                    st.write("")  # Empty space for layout
     else:
         st.info("No questions found")
 
