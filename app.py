@@ -3830,6 +3830,17 @@ def main():
         page_icon="",
         layout="wide"
     )
+
+    st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stActionButton, .stToolbar { display: none !important; }
+    [data-testid="stDecoration"], [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stSidebarCollapseControl"] { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
     
     # Load custom CSS
     with open("static/enhanced_style.css", "r") as f:
