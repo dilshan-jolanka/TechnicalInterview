@@ -1758,16 +1758,8 @@ def welcome_page():
         name = st.text_input("Full Name", value=default_name)
         email = st.text_input("Email", value=default_email)
         submitted = st.form_submit_button("Start Interview")
-    
-    # Clear form button (outside the form to work independently)
-    if st.button("🗑️ Clear Form", help="Clear any pre-filled information"):
-        st.session_state['form_data'] = {}
-        if 'form_submitted' in st.session_state:
-            del st.session_state['form_submitted']
-        st.rerun()
-    
-    # Process form submission
-    if 'candidate_form' in st.session_state and submitted:
+        
+        if submitted:
             # Set a flag to indicate form was submitted
             st.session_state['form_submitted'] = True
             
@@ -1812,6 +1804,13 @@ def welcome_page():
                         st.error(f"Error starting interview: {str(e)}")
             else:
                 st.error("Please enter your name and email to continue.")
+    
+    # Clear form button (outside the form to work independently)
+    if st.button("🗑️ Clear Form", help="Clear any pre-filled information"):
+        st.session_state['form_data'] = {}
+        if 'form_submitted' in st.session_state:
+            del st.session_state['form_submitted']
+        st.rerun()
     
     # Small admin access link at the bottom and back to home option
     st.markdown("---")
