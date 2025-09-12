@@ -92,8 +92,7 @@ def load_answers_from_storage():
 
 def save_answer():
     """Callback function to save answer immediately when radio button changes"""
-    # This callback will be called after the widget value is updated
-    # We'll handle saving in the main flow instead
+    # This is not being used anymore - we save answers directly in show_question
     pass
 
 def detect_programming_language(code_snippet):
@@ -1485,7 +1484,11 @@ def reset_session():
     st.session_state['start_time'] = None
     st.session_state['time_expired'] = False
     st.session_state['interview_submitted'] = False
-    # Keep form_data and time_limit as they are
+    # Clear form data to prevent it from being shown to next candidate
+    st.session_state['form_data'] = {}
+    if 'form_submitted' in st.session_state:
+        del st.session_state['form_submitted']
+    # Keep time_limit as it is
 
 # Function to force admin session (clear candidate data completely)
 def force_admin_session():
@@ -1726,6 +1729,13 @@ def home_page():
 
 # Welcome page
 def welcome_page():
+    # Clear any previous candidate data when accessing welcome page
+    # This ensures no data leakage between different candidates
+    if not st.session_state.get('form_submitted', False):
+        st.session_state['form_data'] = {}
+        if 'user_data' in st.session_state:
+            st.session_state['user_data'] = {}
+    
     st.markdown("""
     <div class="welcome-container fade-in">
         <div class="welcome-title">Welcome to Technical Interview</div>
@@ -1735,8 +1745,9 @@ def welcome_page():
     </div>
     """, unsafe_allow_html=True)
     
-    # Use stored form data if available
-    if st.session_state['form_data']:
+    # Don't auto-fill from previous sessions to prevent data leakage between candidates
+    # Only use form data if it was just submitted in this session
+    if st.session_state.get('form_submitted') and st.session_state['form_data']:
         default_name = st.session_state['form_data'].get('name', '')
         default_email = st.session_state['form_data'].get('email', '')
     else:
@@ -1747,8 +1758,16 @@ def welcome_page():
         name = st.text_input("Full Name", value=default_name)
         email = st.text_input("Email", value=default_email)
         submitted = st.form_submit_button("Start Interview")
-        
-        if submitted:
+    
+    # Clear form button (outside the form to work independently)
+    if st.button("🗑️ Clear Form", help="Clear any pre-filled information"):
+        st.session_state['form_data'] = {}
+        if 'form_submitted' in st.session_state:
+            del st.session_state['form_submitted']
+        st.rerun()
+    
+    # Process form submission
+    if 'candidate_form' in st.session_state and submitted:
             # Set a flag to indicate form was submitted
             st.session_state['form_submitted'] = True
             
@@ -1895,6 +1914,9 @@ def show_question(question_data, question_num, total_questions):
         except (ValueError, TypeError):
             default_index = None
     
+    # Store current question ID for the callback
+    st.session_state['current_question_id'] = question_data['id']
+    
     # Radio options are styled by external CSS  
     selected_label = st.radio(
         "Select your answer:", 
@@ -1903,24 +1925,29 @@ def show_question(question_data, question_num, total_questions):
         key=f"question_{question_data['id']}"
     )
     
-    # Save the selected answer immediately
+    # Save the answer immediately after radio selection (but avoid unnecessary reruns)
     if selected_label:
         selected_option = selected_label.split(':')[0]
-        st.session_state['answers'][question_data['id']] = selected_option
-        # Save to persistent storage immediately
-        save_answers_to_storage()
+        # Only save if the answer has actually changed
+        current_stored_answer = st.session_state.get('answers', {}).get(question_data['id'])
+        if current_stored_answer != selected_option:
+            if 'answers' not in st.session_state:
+                st.session_state['answers'] = {}
+            st.session_state['answers'][question_data['id']] = selected_option
+            # Save to persistent storage
+            save_answers_to_storage()
     
-    # Debug information (can be removed later)
-    if st.checkbox("Show Debug Info", key=f"debug_{question_data['id']}"):
-        st.write(f"**DEBUG INFO:**")
-        if selected_label:
-            selected_option = selected_label.split(':')[0]
-            st.write(f"Radio selected: {selected_label}")
-            st.write(f"Parsed option: {selected_option}")
-        st.write(f"Question ID: {question_data['id']}")
-        st.write(f"Total answers in session: {len(st.session_state.get('answers', {}))}")
-        st.write(f"All answers: {st.session_state.get('answers', {})}")
-        st.write(f"Current answer for this Q: {st.session_state.get('answers', {}).get(question_data['id'], 'None')}")
+    # Debug information (removed for production)
+    # if st.checkbox("Show Debug Info", key=f"debug_{question_data['id']}"):
+    #     st.write(f"**DEBUG INFO:**")
+    #     if selected_label:
+    #         selected_option = selected_label.split(':')[0]
+    #         st.write(f"Radio selected: {selected_label}")
+    #         st.write(f"Parsed option: {selected_option}")
+    #     st.write(f"Question ID: {question_data['id']}")
+    #     st.write(f"Current answer in session: {st.session_state.get('answers', {}).get(question_data['id'], 'None')}")
+    #     st.write(f"Total answers in session: {len(st.session_state.get('answers', {}))}")
+    #     st.write(f"All answers: {st.session_state.get('answers', {})}")
     
     # Single navigation section
     st.markdown("---")
@@ -1952,7 +1979,12 @@ def show_question(question_data, question_num, total_questions):
     
     with nav_col3:
         # Submit button - only show when all questions are answered
-        answered_count = len(st.session_state.get('answers', {}))
+        # Clean up answers to ensure only valid question IDs are counted
+        valid_question_ids = {q['id'] for q in st.session_state.get('questions', [])}
+        clean_answers = {k: v for k, v in st.session_state.get('answers', {}).items() 
+                        if k in valid_question_ids and v}
+        
+        answered_count = len(clean_answers)
         all_answered = answered_count >= total_questions
         
         if all_answered:
@@ -2293,14 +2325,22 @@ def interview_page():
         # Make sure answers are loaded before calculating progress
         load_answers_from_storage()
         
+        # Clean up answers to ensure only valid question IDs are counted (for display only)
+        valid_question_ids = {q['id'] for q in questions}
+        clean_answers = {k: v for k, v in st.session_state.get('answers', {}).items() 
+                        if k in valid_question_ids and v}
+        # DO NOT overwrite session state here - just use for counting
+        
         # Show a progress indicator
-        answered = len(st.session_state.get('answers', {}))
+        answered = len(clean_answers)
         total = len(questions)
         st.write(f"Progress: {answered}/{total}")
     
     with col2:
         # Show a progress bar for answered questions  
-        progress = answered / total if total > 0 else 0
+        progress = answered / total if total > 0 else 0.0
+        # Ensure progress is within valid range [0.0, 1.0]
+        progress = max(0.0, min(1.0, progress))
         st.progress(progress)
     
     # Separator after navigation
@@ -2323,11 +2363,19 @@ def interview_page():
     # Make sure answers are loaded before calculating progress
     load_answers_from_storage()  # Ensure we have the latest answers
     
-    answered = len(st.session_state.get('answers', {}))
+    # Clean up answers to ensure only valid question IDs are counted (for display only)
+    valid_question_ids = {q['id'] for q in questions}
+    clean_answers = {k: v for k, v in st.session_state.get('answers', {}).items() 
+                    if k in valid_question_ids and v}
+    # DO NOT overwrite session state here - just use for counting
+    
+    answered = len(clean_answers)
     total = len(questions)
     
     # Progress calculation
     progress = answered / total if total > 0 else 0.0
+    # Ensure progress is within valid range [0.0, 1.0]
+    progress = max(0.0, min(1.0, progress))
     
     st.sidebar.progress(progress)
     st.sidebar.markdown(f"**{answered}/{total}** questions answered")
