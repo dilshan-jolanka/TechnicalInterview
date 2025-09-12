@@ -1,22 +1,6 @@
-<<<<<<< HEAD
-# streamlit==1.26.0
-# pandas==2.0.3
-# matplotlib==3.7.2
-# numpy==1.24.3
-# openpyxl==3.1.2
-# reportlab
-streamlit==1.26.0
-pandas==2.0.3
-matplotlib==3.7.2
-numpy
-openpyxl==3.1.2
-reportlab
-pillow>=10.0.0
-=======
 streamlit
 pandas
 matplotlib
 numpy
 openpyxl
 reportlab
->>>>>>> 10e11fa8584b8f48c123fb1eba82393c5817941d

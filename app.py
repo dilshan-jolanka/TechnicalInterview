@@ -32,25 +32,69 @@ except ImportError:
 # Import function to load sample questions
 from load_samples import load_sample_questions
 
+def save_answers_to_storage():
+    """Save current answers to persistent storage"""
+    try:
+        if 'user_data' in st.session_state and 'candidate_id' in st.session_state['user_data']:
+            candidate_id = st.session_state['user_data']['candidate_id']
+            answers = st.session_state.get('answers', {})
+            session_id = st.session_state.get('session_id', 'default')
+            
+            # Save to a temporary storage file for this session
+            import os
+            os.makedirs('data/temp_answers', exist_ok=True)
+            
+            temp_file = f'data/temp_answers/answers_{candidate_id}_{session_id}.json'
+            with open(temp_file, 'w') as f:
+                json.dump({
+                    'answers': answers,
+                    'timestamp': datetime.now().isoformat(),
+                    'current_question': st.session_state.get('current_question', 0)
+                }, f)
+                
+            # Also save to Streamlit's session state cache with a backup key
+            st.session_state[f'answers_backup_{candidate_id}'] = answers.copy()
+                
+    except Exception:
+        pass  # Silently handle any storage errors
+
+def load_answers_from_storage():
+    """Load answers from persistent storage"""
+    try:
+        if 'user_data' in st.session_state and 'candidate_id' in st.session_state['user_data']:
+            candidate_id = st.session_state['user_data']['candidate_id']
+            session_id = st.session_state.get('session_id', 'default')
+            
+            # First try to load from file
+            temp_file = f'data/temp_answers/answers_{candidate_id}_{session_id}.json'
+            if os.path.exists(temp_file):
+                with open(temp_file, 'r') as f:
+                    data = json.load(f)
+                    loaded_answers = data.get('answers', {})
+                    
+                    # Only load if we don't already have answers or if loaded answers has more data
+                    current_answers = st.session_state.get('answers', {})
+                    if len(loaded_answers) > len(current_answers):
+                        st.session_state['answers'] = loaded_answers
+                        if 'current_question' not in st.session_state:
+                            st.session_state['current_question'] = data.get('current_question', 0)
+            
+            # Backup: try to load from session state backup
+            backup_key = f'answers_backup_{candidate_id}'
+            if backup_key in st.session_state:
+                backup_answers = st.session_state[backup_key]
+                current_answers = st.session_state.get('answers', {})
+                if len(backup_answers) > len(current_answers):
+                    st.session_state['answers'] = backup_answers.copy()
+                    
+    except Exception:
+        pass  # Silently handle any loading errors
+
 def save_answer():
     """Callback function to save answer immediately when radio button changes"""
-    # Get the current question data
-    if 'questions' in st.session_state and 'current_question' in st.session_state:
-        questions = st.session_state['questions']
-        current_q = st.session_state['current_question']
-        if 0 <= current_q < len(questions):
-            question_data = questions[current_q]
-            radio_key = f"question_{question_data['id']}"
-            
-            # Get the selected option from the radio button
-            if radio_key in st.session_state:
-                selected_label = st.session_state[radio_key]
-                if selected_label:
-                    try:
-                        selected_option = selected_label.split(':')[0]
-                        st.session_state['answers'][question_data['id']] = selected_option
-                    except (AttributeError, IndexError):
-                        pass
+    # This callback will be called after the widget value is updated
+    # We'll handle saving in the main flow instead
+    pass
 
 def detect_programming_language(code_snippet):
     """Detect programming language from code snippet for syntax highlighting"""
@@ -100,6 +144,11 @@ if len(sys.argv) > 1 and '--admin' in sys.argv:
     is_admin_access = True
 
 # Initialize session state variables if they don't exist
+if 'session_id' not in st.session_state:
+    # Create unique session ID for proper isolation
+    import uuid
+    st.session_state['session_id'] = str(uuid.uuid4())
+
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'admin_view' not in st.session_state:
@@ -947,10 +996,11 @@ def generate_complete_candidate_report_pdf(candidate_id, candidate_name, candida
     
     date_taken = candidate_result[0]
     
-    # Get candidate results summary
+    # Get candidate results summary - GROUP BY category to avoid duplicates
     cursor.execute("""
-        SELECT category, score, total_questions 
+        SELECT category, SUM(score) as score, SUM(total_questions) as total_questions 
         FROM results WHERE candidate_id = ?
+        GROUP BY category
     """, (candidate_id,))
     results_summary = cursor.fetchall()
     
@@ -1365,6 +1415,15 @@ def save_results(candidate_id, answers, questions):
     conn = sqlite3.connect('data/mcq_interview.db')
     cursor = conn.cursor()
     
+    # First, check if results already exist for this candidate to prevent duplicates
+    cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
+    existing_results = cursor.fetchone()[0]
+    
+    if existing_results > 0:
+        # Delete existing results and answers to prevent duplicates
+        cursor.execute("DELETE FROM results WHERE candidate_id = ?", (candidate_id,))
+        cursor.execute("DELETE FROM answers WHERE candidate_id = ?", (candidate_id,))
+    
     # Calculate scores by category - use dynamic categories
     categories = get_active_categories()
     category_scores = {category: {'correct': 0, 'total': 0} for category in categories}
@@ -1719,7 +1778,8 @@ def welcome_page():
                         st.session_state['user_data'] = {
                             'name': name,
                             'email': email,
-                            'candidate_id': candidate_id
+                            'candidate_id': candidate_id,
+                            'session_id': st.session_state['session_id']  # Add session ID for isolation
                         }
                         st.session_state['questions'] = questions
                         st.session_state['current_page'] = 'interview'
@@ -1816,8 +1876,9 @@ def show_question(question_data, question_num, total_questions):
             
         st.markdown("</div>", unsafe_allow_html=True)
     
-    # Get current answer if available
-    current_answer = st.session_state['answers'].get(question_data['id'], None)
+    # Get current answer if available - ensure we load from storage first
+    load_answers_from_storage()  # Make sure we have the latest saved answers
+    current_answer = st.session_state.get('answers', {}).get(question_data['id'], None)
     
     # Display options as radio buttons with better styling
     options = question_data['options']
@@ -1826,38 +1887,40 @@ def show_question(question_data, question_num, total_questions):
     # Create option labels with text
     option_labels = [f"{key}: {options[i]}" for i, key in enumerate(option_keys)]
     
-    # Safe index selection for radio button
+    # Safe index selection for radio button - this is CRITICAL for showing selected answers
     default_index = None
-    if current_answer in option_keys:
+    if current_answer and current_answer in option_keys:
         try:
             default_index = option_keys.index(current_answer)
-        except ValueError:
+        except (ValueError, TypeError):
             default_index = None
     
-    # Radio options are styled by external CSS
+    # Radio options are styled by external CSS  
     selected_label = st.radio(
         "Select your answer:", 
         options=option_labels,
         index=default_index,
-        key=f"question_{question_data['id']}",
-        on_change=save_answer
+        key=f"question_{question_data['id']}"
     )
     
-    # Extract just the letter (A, B, C, D) from the selected label
-    try:
-        selected_option = selected_label.split(':')[0] if selected_label else None
-    except (AttributeError, IndexError):
-        selected_option = None
-    
-    # Save the answer when selected - ensure immediate persistence
-    if selected_option:
-        # Save to session state
+    # Save the selected answer immediately
+    if selected_label:
+        selected_option = selected_label.split(':')[0]
         st.session_state['answers'][question_data['id']] = selected_option
-    else:
-        # If no option selected, ensure we don't have a stale answer
-        if question_data['id'] in st.session_state.get('answers', {}):
-            # Keep the existing answer if user hasn't made a new selection
-            pass
+        # Save to persistent storage immediately
+        save_answers_to_storage()
+    
+    # Debug information (can be removed later)
+    if st.checkbox("Show Debug Info", key=f"debug_{question_data['id']}"):
+        st.write(f"**DEBUG INFO:**")
+        if selected_label:
+            selected_option = selected_label.split(':')[0]
+            st.write(f"Radio selected: {selected_label}")
+            st.write(f"Parsed option: {selected_option}")
+        st.write(f"Question ID: {question_data['id']}")
+        st.write(f"Total answers in session: {len(st.session_state.get('answers', {}))}")
+        st.write(f"All answers: {st.session_state.get('answers', {})}")
+        st.write(f"Current answer for this Q: {st.session_state.get('answers', {}).get(question_data['id'], 'None')}")
     
     # Single navigation section
     st.markdown("---")
@@ -1872,6 +1935,7 @@ def show_question(question_data, question_num, total_questions):
             use_container_width=True
         ):
             st.session_state['nav_action'] = 'prev'
+            save_answers_to_storage()  # Save progress before navigation
             st.rerun()
     
     with nav_col2:
@@ -1883,6 +1947,7 @@ def show_question(question_data, question_num, total_questions):
             use_container_width=True
         ):
             st.session_state['nav_action'] = 'next'
+            save_answers_to_storage()  # Save progress before navigation
             st.rerun()
     
     with nav_col3:
@@ -1912,6 +1977,9 @@ def show_question(question_data, question_num, total_questions):
 
 # Interview page showing questions
 def interview_page():
+    # Load saved answers on page start (for browser refresh recovery)
+    load_answers_from_storage()
+    
     # Use the global datetime import with an alias to avoid scoping issues
     import datetime as dt_module
     
@@ -2222,8 +2290,11 @@ def interview_page():
     col1, col2 = st.columns([1, 3])
     
     with col1:
+        # Make sure answers are loaded before calculating progress
+        load_answers_from_storage()
+        
         # Show a progress indicator
-        answered = len(st.session_state['answers'])
+        answered = len(st.session_state.get('answers', {}))
         total = len(questions)
         st.write(f"Progress: {answered}/{total}")
     
@@ -2248,7 +2319,11 @@ def interview_page():
     # Show a summary of answered questions
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Progress")
-    answered = len(st.session_state['answers'])
+    
+    # Make sure answers are loaded before calculating progress
+    load_answers_from_storage()  # Ensure we have the latest answers
+    
+    answered = len(st.session_state.get('answers', {}))
     total = len(questions)
     
     # Progress calculation
@@ -2298,6 +2373,15 @@ def results_page():
     
     # Save results to database
     save_results(candidate_id, answers, questions)
+    
+    # Clean up temporary answer files
+    try:
+        session_id = st.session_state.get('session_id', 'default')
+        temp_file = f'data/temp_answers/answers_{candidate_id}_{session_id}.json'
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+    except Exception:
+        pass  # Silently handle cleanup errors
     
     total_score = 0
     category_scores = {}
@@ -2699,9 +2783,14 @@ def show_candidate_details(candidate_id, conn):
         if st.button("📄 Quick Summary", key=f"summary_{candidate_id}", type="secondary", help="View quick performance summary"):
             st.session_state[f'show_summary_{candidate_id}'] = not st.session_state.get(f'show_summary_{candidate_id}', False)
     
-    # Get results
+    # Get results - GROUP BY category to avoid duplicates
     results = pd.read_sql_query(
-        "SELECT category, score, total_questions FROM results WHERE candidate_id = ?",
+        """SELECT category, 
+                  SUM(score) as score, 
+                  SUM(total_questions) as total_questions 
+           FROM results 
+           WHERE candidate_id = ? 
+           GROUP BY category""",
         conn, params=(candidate_id,)
     )
     
