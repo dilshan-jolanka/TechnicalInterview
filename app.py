@@ -4171,6 +4171,17 @@ def main():
         initial_sidebar_state="expanded",
         menu_items=None  # This removes the hamburger menu
     )
+
+    st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stActionButton, .stToolbar { display: none !important; }
+    [data-testid="stDecoration"], [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stSidebarCollapseControl"] { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
     
     # Hide Streamlit header and other default elements
     hide_streamlit_style = """
