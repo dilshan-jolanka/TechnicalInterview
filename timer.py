@@ -24,6 +24,10 @@ def load_session_data():
                     timer_data['start_time'] = None
                 
                 timer_data['time_limit'] = saved_state.get('time_limit', 60)  # Default 60 minutes
+                
+                # Safety check: ensure time_limit is never less than 10 minutes
+                if timer_data['time_limit'] < 10:
+                    timer_data['time_limit'] = 60  # Reset to 60 minutes if corrupted
                 timer_data['time_expired'] = saved_state.get('time_expired', False)
                 
                 return timer_data

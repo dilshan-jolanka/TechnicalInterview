@@ -169,6 +169,10 @@ if 'start_time' not in st.session_state:
     st.session_state['start_time'] = None
 if 'time_limit' not in st.session_state:
     st.session_state['time_limit'] = 60  # Default: 60 minutes
+    
+# Ensure time_limit is never less than 10 minutes (safety check)
+if st.session_state.get('time_limit', 60) < 10:
+    st.session_state['time_limit'] = 60  # Reset to 60 minutes if corrupted
 if 'form_data' not in st.session_state:
     st.session_state['form_data'] = {"name": "", "email": ""}
 if 'time_expired' not in st.session_state:
@@ -549,7 +553,7 @@ def analyze_response_time_patterns(candidate_id):
             # Simulate response time based on complexity
             simulated_time = random.uniform(30, 180) if has_code else random.uniform(15, 90)
             
-            if simulated_time < 60:  # Quick response
+            if simulated_time < 5:  # Quick response
                 if is_correct:
                     response_patterns['quick_correct'] += 1
                 else:
@@ -725,7 +729,7 @@ def generate_candidate_recommendations(cognitive_traits, personality_insights, c
     
     # Development areas
     for trait, score in cognitive_traits.items():
-        if isinstance(score, (int, float)) and score < 60:
+        if isinstance(score, (int, float)) and score < 5:
             trait_name = trait.replace('_', ' ').title()
             recommendations['development_areas'].append(trait_name)
     
@@ -750,6 +754,139 @@ def generate_candidate_recommendations(cognitive_traits, personality_insights, c
     
     return recommendations
 
+def generate_incomplete_attempt_pdf(candidate_id, candidate_name, candidate_email, report_type="complete"):
+    """Generate PDF report for candidates who didn't complete the interview"""
+    
+    # Get candidate basic info
+    conn = sqlite3.connect('data/mcq_interview.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT date_taken FROM candidates WHERE id = ?", (candidate_id,))
+    candidate_result = cursor.fetchone()
+    if not candidate_result:
+        conn.close()
+        return None
+    
+    date_taken = candidate_result[0]
+    
+    # Get what little data we have from results table
+    cursor.execute("""
+        SELECT category, score, total_questions 
+        FROM results WHERE candidate_id = ?
+    """, (candidate_id,))
+    results_data = cursor.fetchall()
+    
+    conn.close()
+    
+    # Create PDF
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    import io
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        spaceAfter=30,
+        alignment=1,  # Center alignment
+        textColor=colors.darkblue
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=20,
+        textColor=colors.darkblue
+    )
+    
+    story = []
+    
+    # Title and header
+    story.append(Paragraph("TECHNICAL INTERVIEW REPORT", title_style))
+    story.append(Paragraph("INCOMPLETE ATTEMPT", heading_style))
+    story.append(Spacer(1, 20))
+    
+    # Candidate information
+    story.append(Paragraph("CANDIDATE INFORMATION", heading_style))
+    candidate_info = [
+        ['Full Name:', candidate_name],
+        ['Email:', candidate_email],
+        ['Assessment Date:', date_taken],
+        ['Status:', 'INCOMPLETE - Interview not completed']
+    ]
+    
+    candidate_table = Table(candidate_info, colWidths=[2*inch, 4*inch])
+    candidate_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    
+    story.append(candidate_table)
+    story.append(Spacer(1, 30))
+    
+    # Assessment Summary
+    story.append(Paragraph("ASSESSMENT SUMMARY", heading_style))
+    
+    if results_data:
+        story.append(Paragraph("The candidate started the interview but did not complete it. Below is a summary of the questions that were presented:", styles['Normal']))
+        story.append(Spacer(1, 15))
+        
+        # Results summary table
+        summary_data = [['Category', 'Questions Presented', 'Questions Answered', 'Status']]
+        for category, score, total_questions in results_data:
+            summary_data.append([category, str(total_questions), str(score) if score > 0 else "0", 
+                               "Partially Completed" if score > 0 else "Not Attempted"])
+        
+        summary_table = Table(summary_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+        ]))
+        
+        story.append(summary_table)
+    else:
+        story.append(Paragraph("The candidate accessed the interview but did not answer any questions before the session ended.", styles['Normal']))
+    
+    story.append(Spacer(1, 30))
+    
+    # Recommendations
+    story.append(Paragraph("RECOMMENDATIONS", heading_style))
+    story.append(Paragraph("• Consider rescheduling the interview if technical issues were encountered", styles['Normal']))
+    story.append(Paragraph("• Review interview instructions and time limits with the candidate", styles['Normal']))
+    story.append(Paragraph("• Ensure proper test environment and technical setup for future attempts", styles['Normal']))
+    story.append(Spacer(1, 20))
+    
+    # Footer
+    story.append(Paragraph(f"<b>Report Generated by:</b> Jolanka Group Technical Assessment System<br/><b>Generation Date:</b> {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_data
+
 def generate_psychological_profile_pdf(candidate_id, candidate_name, candidate_email):
     """Generate comprehensive PDF report of candidate's psychological profile"""
     
@@ -757,7 +894,11 @@ def generate_psychological_profile_pdf(candidate_id, candidate_name, candidate_e
     conn = sqlite3.connect('data/mcq_interview.db')
     cursor = conn.cursor()
     
-    # Get candidate answers and questions
+    # First check if candidate exists in results table (even with no answers)
+    cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
+    has_results = cursor.fetchone()[0] > 0
+    
+    # Get candidate answers and questions (may be empty for incomplete attempts)
     cursor.execute("""
         SELECT q.id, q.category, q.question, q.code_snippet, q.correct, a.selected_option, a.is_correct
         FROM answers a
@@ -769,10 +910,11 @@ def generate_psychological_profile_pdf(candidate_id, candidate_name, candidate_e
     results = cursor.fetchall()
     conn.close()
     
-    if not results:
+    # If no results table entry at all, this candidate never started
+    if not has_results:
         return None
     
-    # Prepare data
+    # Prepare data (may be empty for incomplete attempts)
     questions = []
     candidate_answers = {}
     
@@ -786,6 +928,10 @@ def generate_psychological_profile_pdf(candidate_id, candidate_name, candidate_e
         }
         questions.append(question)
         candidate_answers[result[0]] = result[5]
+    
+    # For incomplete attempts, create a special report
+    if not questions:
+        return generate_incomplete_attempt_pdf(candidate_id, candidate_name, candidate_email, "psychological")
     
     # Perform AI analysis
     cognitive_traits, category_analysis, response_patterns = analyze_cognitive_patterns(
@@ -995,6 +1141,15 @@ def generate_complete_candidate_report_pdf(candidate_id, candidate_name, candida
     
     date_taken = candidate_result[0]
     
+    # First check if candidate exists in results table (even with no answers)
+    cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
+    has_results = cursor.fetchone()[0] > 0
+    
+    # If no results table entry at all, this candidate never started
+    if not has_results:
+        conn.close()
+        return None
+    
     # Get candidate results summary - GROUP BY category to avoid duplicates
     cursor.execute("""
         SELECT category, SUM(score) as score, SUM(total_questions) as total_questions 
@@ -1003,7 +1158,7 @@ def generate_complete_candidate_report_pdf(candidate_id, candidate_name, candida
     """, (candidate_id,))
     results_summary = cursor.fetchall()
     
-    # Get detailed answers
+    # Get detailed answers (may be empty for incomplete attempts)
     cursor.execute("""
         SELECT q.id, q.category, q.question, q.code_snippet, q.option_a, q.option_b, q.option_c, q.option_d, 
                q.correct, a.selected_option, a.is_correct
@@ -1016,8 +1171,9 @@ def generate_complete_candidate_report_pdf(candidate_id, candidate_name, candida
     
     conn.close()
     
+    # For incomplete attempts, generate incomplete attempt report
     if not detailed_answers:
-        return None
+        return generate_incomplete_attempt_pdf(candidate_id, candidate_name, candidate_email, "complete")
     
     # Calculate overall scores
     total_score = sum(row[1] for row in results_summary)
@@ -1414,48 +1570,79 @@ def save_results(candidate_id, answers, questions):
     conn = sqlite3.connect('data/mcq_interview.db')
     cursor = conn.cursor()
     
-    # First, check if results already exist for this candidate to prevent duplicates
-    cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
-    existing_results = cursor.fetchone()[0]
-    
-    if existing_results > 0:
-        # Delete existing results and answers to prevent duplicates
-        cursor.execute("DELETE FROM results WHERE candidate_id = ?", (candidate_id,))
-        cursor.execute("DELETE FROM answers WHERE candidate_id = ?", (candidate_id,))
-    
-    # Calculate scores by category - use dynamic categories
-    categories = get_active_categories()
-    category_scores = {category: {'correct': 0, 'total': 0} for category in categories}
-    
-    # Save individual answers
-    for q_id, selected_option in answers.items():
-        # Find the question
-        question = next((q for q in questions if q['id'] == q_id), None)
-        if question:
-            is_correct = (selected_option == question['correct'])
-            cursor.execute(
-                "INSERT INTO answers (candidate_id, question_id, selected_option, is_correct) VALUES (?, ?, ?, ?)",
-                (candidate_id, q_id, selected_option, is_correct)
-            )
-            
-            # Update category scores
+    try:
+        # First, check if results already exist for this candidate to prevent duplicates
+        cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
+        existing_results = cursor.fetchone()[0]
+        
+        if existing_results > 0:
+            # Delete existing results and answers to prevent duplicates
+            cursor.execute("DELETE FROM results WHERE candidate_id = ?", (candidate_id,))
+            cursor.execute("DELETE FROM answers WHERE candidate_id = ?", (candidate_id,))
+        
+        # Calculate scores by category - use dynamic categories
+        categories = get_active_categories()
+        category_scores = {category: {'correct': 0, 'total': 0} for category in categories}
+        
+        # Count how many questions were presented to the candidate
+        questions_by_category = {}
+        for question in questions:
             category = question['category']
-            if category not in category_scores:
-                category_scores[category] = {'correct': 0, 'total': 0}
-            category_scores[category]['total'] += 1
-            if is_correct:
-                category_scores[category]['correct'] += 1
-    
-    # Save category results
-    for category, score in category_scores.items():
-        if score['total'] > 0:  # Only save if there were questions in this category
+            if category not in questions_by_category:
+                questions_by_category[category] = []
+            questions_by_category[category].append(question)
+        
+        # Save individual answers (if any)
+        answers_saved = 0
+        for q_id, selected_option in answers.items():
+            # Find the question
+            question = next((q for q in questions if q['id'] == q_id), None)
+            if question:
+                is_correct = (selected_option == question['correct'])
+                cursor.execute(
+                    "INSERT INTO answers (candidate_id, question_id, selected_option, is_correct) VALUES (?, ?, ?, ?)",
+                    (candidate_id, q_id, selected_option, is_correct)
+                )
+                answers_saved += 1
+                
+                # Update category scores
+                category = question['category']
+                if category not in category_scores:
+                    category_scores[category] = {'correct': 0, 'total': 0}
+                category_scores[category]['total'] += 1
+                if is_correct:
+                    category_scores[category]['correct'] += 1
+        
+        # Save category results - IMPORTANT: Save results even if no answers were given
+        results_saved = 0
+        for category in questions_by_category.keys():
+            answered_in_category = category_scores.get(category, {'correct': 0, 'total': 0})
+            total_questions_in_category = len(questions_by_category[category])
+            
+            # Save the result showing how many were answered vs total questions presented
             cursor.execute(
                 "INSERT INTO results (candidate_id, category, score, total_questions) VALUES (?, ?, ?, ?)",
-                (candidate_id, category, score['correct'], score['total'])
+                (candidate_id, category, answered_in_category['correct'], total_questions_in_category)
             )
-    
-    conn.commit()
-    conn.close()
+            results_saved += 1
+        
+        # If no questions were presented at all (shouldn't happen), save a placeholder
+        if len(questions) == 0:
+            cursor.execute(
+                "INSERT INTO results (candidate_id, category, score, total_questions) VALUES (?, ?, ?, ?)",
+                (candidate_id, 'General', 0, 0)
+            )
+            results_saved += 1
+        
+        conn.commit()
+        print(f"DEBUG: Saved results for candidate {candidate_id}: {answers_saved} answers out of {len(questions)} questions, {results_saved} category results")
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"ERROR: Failed to save results for candidate {candidate_id}: {str(e)}")
+        raise e
+    finally:
+        conn.close()
 
 # Authentication function
 def authenticate(username, password):
@@ -2006,10 +2193,25 @@ def show_question(question_data, question_num, total_questions):
                 help=f"Answer all {total_questions} questions to enable submission"
             )
 
-# Interview page showing questions
 def interview_page():
     # Load saved answers on page start (for browser refresh recovery)
     load_answers_from_storage()
+    
+    # Backup save - ensure results are saved periodically
+    try:
+        if ('user_data' in st.session_state and 'questions' in st.session_state and 
+            st.session_state.get('answers') and len(st.session_state['answers']) > 0):
+            candidate_id = st.session_state['user_data']['candidate_id']
+            answers = st.session_state['answers']
+            questions = st.session_state['questions']
+            
+            # Only save if we haven't saved recently (avoid duplicate saves)
+            if not hasattr(st.session_state, 'last_backup_save') or len(answers) != st.session_state.get('last_backup_save', 0):
+                save_results(candidate_id, answers, questions)
+                st.session_state['last_backup_save'] = len(answers)
+                print(f"DEBUG: Backup save - {len(answers)} answers for candidate {candidate_id}")
+    except Exception as e:
+        print(f"DEBUG: Backup save failed: {str(e)}")
     
     # Use the global datetime import with an alias to avoid scoping issues
     import datetime as dt_module
@@ -2022,7 +2224,20 @@ def interview_page():
         elapsed_time = (dt_module.datetime.now() - st.session_state['start_time']).total_seconds()
         
         if elapsed_time >= time_limit_seconds:
-            # Time has expired - force submit immediately
+            # Time has expired - save results and force submit immediately
+            save_answers_to_storage()
+            
+            # Save results to database immediately
+            try:
+                if ('user_data' in st.session_state and 'questions' in st.session_state):
+                    candidate_id = st.session_state['user_data']['candidate_id']
+                    answers = st.session_state.get('answers', {})
+                    questions = st.session_state['questions']
+                    save_results(candidate_id, answers, questions)
+                    print(f"DEBUG: Python timer expiry - saved results for candidate {candidate_id}")
+            except Exception as e:
+                print(f"ERROR: Python timer save failed: {str(e)}")
+            
             st.session_state['interview_submitted'] = True
             st.session_state['current_page'] = 'results'
             st.session_state['time_expired'] = True
@@ -2036,8 +2251,27 @@ def interview_page():
             st.stop()  # This prevents further execution and redirect loop
     
     # Check for auto-submit from timer expiry (backup)
+    # Check for auto-submit from timer expiry (backup from JavaScript)
     if 'auto_submit' in st.query_params or 'time_expired' in st.query_params:
-        # Force set all necessary flags for proper submission
+        # Save data before submission
+        save_answers_to_storage()
+        
+        # Save results to database FIRST
+        try:
+            if 'user_data' in st.session_state and 'questions' in st.session_state:
+                candidate_id = st.session_state['user_data']['candidate_id']
+                answers = st.session_state.get('answers', {})  # Get answers even if empty
+                questions = st.session_state['questions']
+                
+                # Save results even if no answers (incomplete attempt)
+                save_results(candidate_id, answers, questions)
+                print(f"DEBUG: Query param auto-submit - saved results for candidate {candidate_id}")
+                
+        except Exception as e:
+            st.error(f"Error saving results on auto-submit: {str(e)}")
+            print(f"ERROR: Auto-submit save failed: {str(e)}")
+        
+        # Force set all necessary flags for proper submission AFTER saving
         st.session_state['interview_submitted'] = True
         st.session_state['current_page'] = 'results'
         st.session_state['time_expired'] = True
@@ -2047,7 +2281,7 @@ def interview_page():
         st.query_params["page"] = "results"
         
         # Show a temporary message before redirect
-        st.success("⏰ Time expired! Redirecting to results...")
+        st.success("⏰ Time expired! Your results have been saved. Redirecting...")
         
         # Force save session state and redirect
         st.rerun()
@@ -2069,6 +2303,20 @@ def interview_page():
             except (ValueError, IndexError):
                 pass
         elif action == 'submit':
+            # Save answers before submission (backup)
+            save_answers_to_storage()
+            
+            # Save results to database immediately
+            try:
+                if ('user_data' in st.session_state and 'questions' in st.session_state):
+                    candidate_id = st.session_state['user_data']['candidate_id']
+                    answers = st.session_state.get('answers', {})
+                    questions = st.session_state['questions']
+                    save_results(candidate_id, answers, questions)
+                    print(f"DEBUG: Submit button - saved results for candidate {candidate_id}")
+            except Exception as e:
+                print(f"ERROR: Submit save failed: {str(e)}")
+            
             # Set all necessary flags for submission
             st.session_state['interview_submitted'] = True
             st.session_state['current_page'] = 'results'
@@ -2192,14 +2440,42 @@ def interview_page():
                     const progressPercent = (remainingSeconds / totalSeconds) * 100;
                     progressBar.style.width = progressPercent + '%';
                     
-                    // Check if expired - just reload page, let Python handle it
+                    // Check if expired - redirect with auto-submit parameters
                     if (remainingSeconds <= 0) {{
-                        // Show alert and reload after a short delay - Python will handle the auto-submit
-                        alert('Time has expired! Your interview will be automatically submitted.');
-                        setTimeout(() => {{
+                        // Clear any existing timer intervals to prevent multiple triggers
+                        if (window.timerInterval) {{
+                            clearInterval(window.timerInterval);
+                            window.timerInterval = null;
+                        }}
+                        
+                        // Show alert
+                        alert('⏰ Time has expired! Your interview will be automatically submitted.');
+                        
+                        // Set flags for Python to detect
+                        try {{
+                            sessionStorage.setItem('timer_expired', 'true');
+                            sessionStorage.setItem('auto_submit', 'true');
+                        }} catch(e) {{
+                            console.log('Session storage not available:', e);
+                        }}
+                        
+                        // Redirect with specific parameters for auto-submit
+                        try {{
+                            // Try different redirect methods for better compatibility
+                            if (window.parent && window.parent !== window) {{
+                                // If in iframe, redirect parent
+                                window.parent.location.href = window.location.origin + '/?auto_submit=true&time_expired=true&page=results';
+                            }} else {{
+                                // Direct redirect
+                                window.location.href = '/?auto_submit=true&time_expired=true&page=results';
+                            }}
+                        }} catch(e) {{
+                            console.log('Redirect failed, trying reload:', e);
+                            // Fallback: reload page and let Python timer check handle it
                             window.location.reload();
-                        }}, 2000); // 2 second delay to prevent rapid redirects
-                        return;
+                        }}
+                        
+                        return; // Stop further timer execution
                     }}
                     
                     remainingSeconds--;
@@ -2238,11 +2514,30 @@ def interview_page():
         elapsed_time = (dt_module.datetime.now() - st.session_state['start_time']).total_seconds()
         time_limit_seconds = st.session_state['time_limit'] * 60
         if elapsed_time >= time_limit_seconds and not st.session_state.get('time_expired', False):
+            # Save data before marking as expired
+            save_answers_to_storage()
+            
+            # Save results to database FIRST
+            try:
+                if 'user_data' in st.session_state and 'questions' in st.session_state:
+                    candidate_id = st.session_state['user_data']['candidate_id']
+                    answers = st.session_state.get('answers', {})  # Get answers even if empty
+                    questions = st.session_state['questions']
+                    
+                    # Save results even if no answers (incomplete attempt)
+                    save_results(candidate_id, answers, questions)
+                    print(f"DEBUG: Server-side time check - saved results for candidate {candidate_id}")
+                    
+            except Exception as e:
+                st.error(f"Error saving results on timer expiry: {str(e)}")
+                print(f"ERROR: Timer expiry save failed: {str(e)}")
+            
+            # Mark as expired and submitted AFTER saving
             st.session_state['time_expired'] = True
             st.session_state['interview_submitted'] = True
             st.session_state['current_page'] = 'results'
             st.query_params["page"] = "results"
-            st.error("Time has expired! Your interview has been automatically submitted.")
+            st.success("⏰ TIME EXPIRED! Your interview has been automatically submitted and saved.")
             st.rerun()
     
     # If time expired, show a message and go to results
@@ -2418,8 +2713,13 @@ def results_page():
     answers = st.session_state['answers']
     candidate_id = st.session_state['user_data']['candidate_id']
     
+    print(f"DEBUG: Results page - Candidate ID: {candidate_id}")
+    print(f"DEBUG: Results page - Answers count: {len(answers)}")
+    print(f"DEBUG: Results page - Questions count: {len(questions)}")
+    
     # Save results to database
     save_results(candidate_id, answers, questions)
+    print(f"DEBUG: Results page - save_results called for candidate {candidate_id}")
     
     # Clean up temporary answer files
     try:
@@ -2865,8 +3165,23 @@ def show_quick_candidate_summary(candidate_id, conn, candidate_name):
     st.markdown("#### 🚀 Quick Performance Insights")
     
     try:
-        # Get all candidate answers for analysis
+        # First check if candidate has any results (even incomplete)
         cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM results WHERE candidate_id = ?", (candidate_id,))
+        has_results = cursor.fetchone()[0] > 0
+        
+        if not has_results:
+            st.warning("❌ No assessment data available - candidate never started the interview.")
+            return
+        
+        # Get results summary
+        cursor.execute("""
+            SELECT category, score, total_questions 
+            FROM results WHERE candidate_id = ?
+        """, (candidate_id,))
+        results_data = cursor.fetchall()
+        
+        # Get all candidate answers for detailed analysis
         cursor.execute("""
             SELECT q.category, q.question, q.code_snippet, a.is_correct
             FROM answers a
@@ -2877,6 +3192,7 @@ def show_quick_candidate_summary(candidate_id, conn, candidate_name):
         answers_data = cursor.fetchall()
         
         if answers_data:
+            # Has answered some questions - show normal analysis
             # Basic analysis
             total_answers = len(answers_data)
             correct_answers = sum(1 for row in answers_data if row[3])
@@ -2952,7 +3268,30 @@ def show_quick_candidate_summary(candidate_id, conn, candidate_name):
                 st.error("📖 Below expectations. Consider additional training or different role.")
                 
         else:
-            st.warning("No detailed answer data available for analysis.")
+            # No answers but has results - incomplete attempt
+            total_questions_presented = sum(row[2] for row in results_data)
+            
+            st.markdown(f"""
+            <div style="background: #FF6B6B; color: white; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;">
+                <h4 style="margin: 0; color: white;">⚠️ Incomplete Assessment</h4>
+                <p style="margin: 5px 0 0 0; color: white;">
+                    {candidate_name} started the interview but did not answer any questions
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show what was presented
+            if results_data:
+                st.markdown("**Assessment Details:**")
+                for category, score, total_questions in results_data:
+                    st.markdown(f"• **{category}**: {total_questions} questions presented, 0 answered")
+                
+                st.markdown(f"📊 **Total Questions Presented**: {total_questions_presented}")
+                
+            st.markdown("**Recommendations:**")
+            st.warning("🔄 Consider rescheduling - candidate may have experienced technical issues or time constraints")
+            st.info("📞 Follow up to understand why the assessment was not completed")
+            st.info("🛠️ Verify technical requirements and test environment for future attempts")
             
     except Exception as e:
         st.error(f"Error generating quick summary: {str(e)}")
@@ -3828,8 +4167,25 @@ def main():
     st.set_page_config(
         page_title="MCQ Interview Application", 
         page_icon="",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded",
+        menu_items=None  # This removes the hamburger menu
     )
+    
+    # Hide Streamlit header and other default elements
+    hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden;}
+    [data-testid="stDecoration"] {visibility: hidden;}
+    [data-testid="stStatusWidget"] {visibility: hidden;}
+    #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
+    </style>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
     
     # Load custom CSS
     with open("static/enhanced_style.css", "r") as f:
@@ -3869,6 +4225,10 @@ def main():
                         for key in restore_keys:
                             if key in saved_state:
                                 st.session_state[key] = saved_state[key]
+                        
+                        # Safety check for time_limit after restoration
+                        if 'time_limit' in st.session_state and st.session_state['time_limit'] < 10:
+                            st.session_state['time_limit'] = 60  # Reset to 60 minutes if corrupted
                                 
                         # Special handling for datetime objects
                         if 'start_time' in saved_state:
@@ -3934,6 +4294,56 @@ def main():
                 st.session_state['current_page'] = 'admin_dashboard'
             else:
                 st.session_state['current_page'] = 'admin_login'
+    
+    # Global handler for timer expiry auto-submit (works from any page)
+    elif 'auto_submit' in query_params or 'time_expired' in query_params:
+        # Handle timer expiry from any page context
+        print("DEBUG: Global auto-submit handler triggered")
+        save_answers_to_storage()
+        
+        # Save results to database if we have the necessary data
+        try:
+            if ('user_data' in st.session_state and st.session_state['user_data'] and 
+                'questions' in st.session_state and st.session_state['questions']):
+                candidate_id = st.session_state['user_data']['candidate_id']
+                answers = st.session_state.get('answers', {})
+                questions = st.session_state['questions']
+                
+                print(f"DEBUG: Auto-submit - Candidate ID: {candidate_id}")
+                print(f"DEBUG: Auto-submit - Answers count: {len(answers)}")
+                print(f"DEBUG: Auto-submit - Questions count: {len(questions)}")
+                print(f"DEBUG: Auto-submit - Answers: {answers}")
+                
+                # Save results (handles incomplete attempts)
+                save_results(candidate_id, answers, questions)
+                print(f"DEBUG: Global auto-submit handler - saved results for candidate {candidate_id}")
+                
+                # Mark as completed
+                st.session_state['interview_submitted'] = True
+                st.session_state['time_expired'] = True
+                
+            else:
+                print("DEBUG: Auto-submit - Missing session data:")
+                print(f"  user_data exists: {'user_data' in st.session_state}")
+                print(f"  questions exists: {'questions' in st.session_state}")
+                if 'user_data' in st.session_state:
+                    print(f"  user_data content: {st.session_state['user_data']}")
+                
+        except Exception as e:
+            print(f"ERROR: Global auto-submit save failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            st.error(f"Error saving results: {str(e)}")
+        
+        # Clean query params and redirect to results
+        st.query_params.clear()
+        st.session_state['current_page'] = 'results'
+        st.query_params["page"] = "results"
+        
+        # Show success message and redirect
+        st.success("⏰ TIME EXPIRED! Your interview has been automatically submitted and saved.")
+        st.balloons()
+        st.rerun()
     
     # Then check other page routing (but not for admin pages)
     elif 'page' in query_params:
