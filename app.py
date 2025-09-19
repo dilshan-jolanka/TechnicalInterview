@@ -3690,7 +3690,7 @@ def show_candidate_results():
                             correct = "✓" if row['is_correct'] else "✗"
                             st.markdown(f"**Q: {row['question_text']}** {correct}")
                             
-                            # Only show options with correct answer highlighted (hide candidate's selection for privacy)
+                            # Show all options with candidate's selection and correct answer highlighted
                             options = {
                                 'A': row['option_a'],
                                 'B': row['option_b'],
@@ -3698,17 +3698,28 @@ def show_candidate_results():
                                 'D': row['option_d']
                             }
                             
+                            candidate_answer = row['selected_option']
+                            correct_answer = row['correct_option']
+                            
                             for opt, text in options.items():
-                                if opt == row['correct_option']:
-                                    st.markdown(f"- **{opt}: {text}** (Correct Answer)")
+                                if opt == candidate_answer and opt == correct_answer:
+                                    # Candidate selected correct answer
+                                    st.markdown(f"- **{opt}: {text}** ✅ (Candidate's Answer - Correct)")
+                                elif opt == candidate_answer:
+                                    # Candidate selected this (wrong answer)
+                                    st.markdown(f"- **{opt}: {text}** ❌ (Candidate's Answer - Incorrect)")
+                                elif opt == correct_answer:
+                                    # This is the correct answer (candidate didn't select it)
+                                    st.markdown(f"- **{opt}: {text}** ✓ (Correct Answer)")
                                 else:
+                                    # Regular option
                                     st.markdown(f"- {opt}: {text}")
                             
-                            # Show only if answered correctly or incorrectly without revealing the candidate's choice
+                            # Summary
                             if row['is_correct']:
-                                st.success("Answered correctly")
+                                st.success(f"✅ Candidate answered correctly: {candidate_answer}")
                             else:
-                                st.error("Answered incorrectly")
+                                st.error(f"❌ Candidate answered: {candidate_answer} | Correct: {correct_answer}")
                             
                             st.markdown("---")
             else:
